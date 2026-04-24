@@ -401,7 +401,7 @@ func TypedSendEvent[M messageType](ctx context.Context, event *TypedAgentEvent[M
 	// State.Messages and this event, mutating via this pointer synchronizes both paths.
 	if event.Output != nil && event.Output.MessageOutput != nil {
 		if msg := event.Output.MessageOutput.Message; msg != nil {
-			typedEnsureMessageID(msg)
+			EnsureMessageID(msg)
 		}
 	}
 
