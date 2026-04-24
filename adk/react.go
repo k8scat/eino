@@ -347,6 +347,23 @@ func genReactState(config *reactConfig) func(ctx context.Context) *State {
 	}
 }
 
+// propagateToolMsgIDs copies pre-generated message IDs from state.ToolMsgIDs
+// (stored by the event sender) onto the compose-created tool result messages,
+// so that event and state messages share the same ID.
+// If no stored ID is found (old checkpoint, custom event sender), a fresh one is generated.
+func propagateToolMsgIDs(ctx context.Context, toolResults []Message) {
+	_ = compose.ProcessState(ctx, func(_ context.Context, st *State) error {
+		for _, msg := range toolResults {
+			if id := st.popToolMsgID(msg.ToolName, msg.ToolCallID); id != "" {
+				msg.Extra = internal.SetMessageID(msg.Extra, id)
+			} else {
+				msg.Extra = internal.EnsureMessageID(msg.Extra)
+			}
+		}
+		return nil
+	})
+}
+
 func newReact(ctx context.Context, config *reactConfig) (reactGraph, error) {
 	const (
 		initNode_                      = "Init"
@@ -435,21 +452,7 @@ func newReact(ctx context.Context, config *reactConfig) (reactGraph, error) {
 	// AfterToolCalls node: calls AfterToolCallsRewriteState handlers after all tool calls complete.
 	// The graph auto-materializes the ToolsNode stream into []Message before this node.
 	afterToolCalls := func(ctx context.Context, toolResults []Message) ([]Message, error) {
-		// Propagate tool message IDs from event sender to state messages.
-		// The event sender pre-generated IDs and stored them in state.ToolMsgIDs[toolName+callID].
-		// Here we pop them and set them on the compose-created tool result messages
-		// so that state messages share the same IDs as their corresponding event messages.
-		// If no stored ID is found (old checkpoint, custom event sender), generate a fresh one.
-		_ = compose.ProcessState(ctx, func(_ context.Context, st *State) error {
-			for _, msg := range toolResults {
-				if id := st.popToolMsgID(msg.ToolName, msg.ToolCallID); id != "" {
-					msg.Extra = internal.SetMessageID(msg.Extra, id)
-				} else {
-					msg.Extra = internal.EnsureMessageID(msg.Extra)
-				}
-			}
-			return nil
-		})
+		propagateToolMsgIDs(ctx, toolResults)
 
 		var stateMessages []Message
 		_ = compose.ProcessState(ctx, func(_ context.Context, st *State) error {
